@@ -12,6 +12,7 @@ import (
 	"github.com/TwiN/gatus/v5/storage/store/common"
 	"github.com/TwiN/gatus/v5/watchdog"
 	"github.com/gofiber/fiber/v2"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
@@ -21,6 +22,13 @@ func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
 		if !exists || (success != "true" && success != "false") {
 			return c.Status(400).SendString("missing or invalid success query parameter")
 		}
+
+		// Get the error if present
+		resultError := c.Queries()["error"]
+		if resultError != "" {
+			resultError = sanitizeInput(resultError)
+		}
+
 		// Check if the authorization bearer token header is correct
 		authorizationHeader := string(c.Request().Header.Peek("Authorization"))
 		if !strings.HasPrefix(authorizationHeader, "Bearer ") {
@@ -46,6 +54,11 @@ func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
 			Success:   c.QueryBool("success"),
 			Errors:    []string{},
 		}
+
+		if resultError != "" {
+			result.Errors = append(result.Errors, resultError)
+		}
+
 		convertedEndpoint := externalEndpoint.ToEndpoint()
 		if err := store.Get().Insert(convertedEndpoint, result); err != nil {
 			if errors.Is(err, common.ErrEndpointNotFound) {
@@ -64,4 +77,9 @@ func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
 		// Return the result
 		return c.Status(200).SendString("")
 	}
+}
+
+func sanitizeInput(s string) string {
+	p := bluemonday.UGCPolicy()
+	return p.Sanitize(s)
 }
